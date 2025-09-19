@@ -167,7 +167,7 @@ const App = () => {
           },
         });
 
-        const description = response.text.trim();
+        const description = response.text?.trim();
         if (!description) {
             throw new Error("Could not identify the product in the image.");
         }
@@ -251,7 +251,7 @@ const App = () => {
         },
       });
 
-      for (const part of response.candidates[0].content.parts) {
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) {
           return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
@@ -277,7 +277,7 @@ Based on the product, rewrite the generic prompt to create a specific, branded, 
               model: 'gemini-2.5-flash',
               contents: creativeDirectionPrompt,
           });
-          return response.text.trim();
+          return response.text?.trim() ?? stylePrompt;
       } catch(err) {
           console.error("Failed to get contextual prompt, falling back to original.", err);
           return stylePrompt;
@@ -307,6 +307,10 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
             },
         });
         
+        if (!response.text) {
+            console.warn("Could not generate 4 diverse prompts, falling back to original.");
+            return Array(4).fill(basePrompt);
+        }
         const jsonResponse = JSON.parse(response.text);
 
         if (Array.isArray(jsonResponse) && jsonResponse.length > 0) {
