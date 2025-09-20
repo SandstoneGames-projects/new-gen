@@ -12,7 +12,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const PHOTO_STYLES = [
   {
     id: 'whitebg',
-    name: 'White Background Shots',
+    name: 'White Background',
     description: 'The e-commerce gold standard. Clean, minimal, and distraction-free.',
     prompt: "Isolate the product from its current background and place it on a completely pure, seamless white background (#FFFFFF). The lighting on the product should be clean, bright, and diffused to eliminate all but the softest contact shadows, ensuring the product's colors and details are accurately represented. The final image should be suitable for a high-end e-commerce product listing.",
     preview: 'https://i.imgur.com/3Hn6MM1.jpeg',
@@ -93,11 +93,13 @@ type GeneratedImage = {
 };
 
 const App = () => {
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [activeSourceImageIndex, setActiveSourceImageIndex] = useState(0);
   const [mainImage, setMainImage] = useState<string | null>(null);
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
   const [activeThumbnailIndex, setActiveThumbnailIndex] = useState(-1);
   const [productDescription, setProductDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -105,6 +107,8 @@ const App = () => {
 
   const [modal, setModal] = useState<{type: string, data?: any} | null>(null);
   const [improvePrompt, setImprovePrompt] = useState('');
+  const [improvementSuggestions, setImprovementSuggestions] = useState<string[]>([]);
+  const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
   
   const placeholderRef = useRef<HTMLTextAreaElement>(null);
   const [currentPlaceholder, setCurrentPlaceholder] = useState('e.g., Make the lighting more dramatic...');
@@ -150,6 +154,7 @@ const App = () => {
   const analyzeImage = async (base64Image: string) => {
       setIsAnalyzing(true);
       setError(null);
+      setProductDescription('');
       try {
         if (!base64Image) throw new Error("Source image is missing.");
         
@@ -162,7 +167,7 @@ const App = () => {
           contents: {
             parts: [
               { inlineData: { data, mimeType } },
-              { text: 'Analyze the image and provide a concise, descriptive name for the product shown. Focus on what the item is, its color, and any distinct patterns. For example: "a bottle of red hot sauce with a green cap" or "a blue patterned phone case". Output only the product name.' },
+              { text: 'Analyze the image and provide a detailed description of the product and its setting. Include the product type, key features, colors, materials, the current background, lighting style, and overall mood. For example: "A glossy red ceramic mug with a white handle, sitting on a dark wooden table. The background is a blurry, warm-toned kitchen. The lighting is soft and natural, coming from a side window, creating a cozy and inviting mood." Output only this detailed description.' },
             ],
           },
         });
@@ -181,54 +186,94 @@ const App = () => {
       }
     };
     
-  const processUploadedFile = (file: File) => {
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const imageData = reader.result as string;
-        setUploadedImage(imageData);
-        setMainImage(imageData);
-        setActiveThumbnailIndex(-1);
-        setProductDescription('');
-        setError(null);
-        setModal(null);
-        analyzeImage(imageData);
+    const processImages = (imageDataUrls: string[]) => {
+      if (imageDataUrls.length === 0) return;
+      setUploadedImages(imageDataUrls);
+      setMainImage(imageDataUrls[0]);
+      setActiveSourceImageIndex(0);
+      setActiveThumbnailIndex(-1);
+      setGeneratedImages([]);
+      setProductDescription('');
+      setError(null);
+      setModal(null);
+      analyzeImage(imageDataUrls[0]);
+    };
+
+    const processFiles = (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+
+      const imageFiles = Array.from(files)
+        .filter(file => file.type.startsWith('image/'))
+        .slice(0, 6);
+
+      if (imageFiles.length === 0) return;
+
+      const readers = imageFiles.map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      });
+
+      Promise.all(readers).then(processImages).catch(err => {
+        console.error("File reading error:", err);
+        setError("There was an error reading one of the files.");
+      });
+    };
+    
+    const handleUrlUpload = useCallback(async () => {
+      if (!imageUrl.trim()) {
+        setError("Please enter a valid URL.");
+        return;
+      }
+      setError(null);
+  
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+  
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          setError("Failed to process image from URL.");
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        try {
+          const dataUrl = canvas.toDataURL('image/png');
+          processImages([dataUrl]);
+          setImageUrl('');
+        } catch (e) {
+          console.error("Canvas toDataURL error:", e);
+          setError("Could not process image from this URL. It might be due to security restrictions (CORS). Try downloading it and uploading the file directly.");
+        }
       };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      processUploadedFile(file);
-    }
-  };
   
-  const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-  };
+      img.onerror = () => {
+        setError("Failed to load image from the provided URL. Please check the URL and try again.");
+      };
+      
+      img.src = imageUrl;
+    }, [imageUrl]);
 
-  const handleDragEnter = (event: React.DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    setIsDragging(true);
-  };
+    const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+      processFiles(event.target.files);
+    };
+    
+    const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => { event.preventDefault(); };
+    const handleDragEnter = (event: React.DragEvent<HTMLLabelElement>) => { event.preventDefault(); setIsDragging(true); };
+    const handleDragLeave = (event: React.DragEvent<HTMLLabelElement>) => { event.preventDefault(); setIsDragging(false); };
+    const handleDrop = (event: React.DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
+      setIsDragging(false);
+      processFiles(event.dataTransfer.files);
+    };
 
-  const handleDragLeave = (event: React.DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    setIsDragging(false);
-  };
-  
-  const handleDrop = (event: React.DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    setIsDragging(false);
-    const file = event.dataTransfer.files?.[0];
-    if (file) {
-      processUploadedFile(file);
-    }
-  };
-
-  const generateImage = useCallback(async (base64Image: string, prompt: string) => {
+    const generateImage = useCallback(async (base64Image: string, prompt: string) => {
     try {
       if (!base64Image) throw new Error("Source image is missing.");
       
@@ -262,29 +307,29 @@ const App = () => {
       setError(`Failed to generate image. ${(err as Error).message}`);
       return null;
     }
-  }, []);
+    }, []);
 
-  const getContextualPrompt = async (stylePrompt: string, productDesc: string) => {
-      try {
-          const creativeDirectionPrompt = `You are a creative director for a marketing agency. Your task is to enhance a generic photography prompt to make it specific and compelling for a particular product.
+    const getContextualPrompt = async (stylePrompt: string, productDesc: string) => {
+        try {
+            const creativeDirectionPrompt = `You are a creative director for a marketing agency. Your task is to enhance a generic photography prompt to make it specific and compelling for a particular product.
 
 Generic Prompt: "${stylePrompt}"
 Product Description: "${productDesc}"
 
 Based on the product, rewrite the generic prompt to create a specific, branded, and engaging scene. For example, if the product is 'hot sauce', a lifestyle prompt could be about drizzling it on chicken wings at a barbecue. Be creative and detailed. Output only the new, rewritten prompt.`;
 
-          const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: creativeDirectionPrompt,
-          });
-          return response.text?.trim() ?? stylePrompt;
-      } catch(err) {
-          console.error("Failed to get contextual prompt, falling back to original.", err);
-          return stylePrompt;
-      }
-  };
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: creativeDirectionPrompt,
+            });
+            return response.text?.trim() ?? stylePrompt;
+        } catch(err) {
+            console.error("Failed to get contextual prompt, falling back to original.", err);
+            return stylePrompt;
+        }
+    };
 
-  const getDiversePrompts = async (basePrompt: string) => {
+    const getDiversePrompts = async (basePrompt: string) => {
     try {
         const promptVariationRequest = `Based on the following creative direction, generate exactly 4 distinct and varied photography prompts. Each should explore a different angle, lighting, or composition to provide a range of creative options.
 
@@ -327,11 +372,46 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
         console.error("Error generating diverse prompts:", err);
         return Array(4).fill(basePrompt);
     }
-  };
+    };
+  
+    const getImprovementSuggestions = async (imageDescription: string): Promise<string[]> => {
+      const prompt = `You are an expert creative director. Based on the following image description, generate exactly 5 creative and actionable suggestions to improve the product photograph. The suggestions should cover different aspects like background, lighting, composition, props, and mood.
+    
+Image Description: "${imageDescription}"
+    
+Return the 5 suggestions as a JSON object with a key "suggestions" containing an array of strings. For example: {"suggestions": ["Change the background to a marble countertop.", "Add steam rising from it to suggest it's hot.", "Use more dramatic, high-contrast lighting.", "Place a complementary object next to it.", "Shoot from a top-down angle."]}.`;
+    
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              suggestions: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: 'An array of exactly 5 creative suggestions.'
+              }
+            },
+            required: ['suggestions']
+          },
+        },
+      });
+    
+      if (response.text) {
+        const parsed = JSON.parse(response.text);
+        return parsed.suggestions || [];
+      }
+      return [];
+    };
 
-  const handleGenerateStyle = (style: typeof PHOTO_STYLES[0]) => {
-    if (!uploadedImage) return;
+    const handleGenerateStyle = (style: typeof PHOTO_STYLES[0]) => {
+    if (uploadedImages.length === 0) return;
     setModal(null);
+
+    const sourceImage = uploadedImages[activeSourceImageIndex];
   
     const placeholders: GeneratedImage[] = Array(4).fill(null).map(() => ({
       id: crypto.randomUUID(),
@@ -353,7 +433,7 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
       let isFirstSuccessfulInBatch = true;
   
       placeholders.forEach((placeholder, index) => {
-        generateImage(uploadedImage, diversePrompts[index])
+        generateImage(sourceImage, diversePrompts[index])
           .then(result => {
             setGeneratedImages(currentImages => {
               const newImages = currentImages.map(img => {
@@ -379,9 +459,9 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
     };
   
     processGeneration();
-  };
+    };
 
-  const handleImproveImage = async () => {
+    const handleImproveImage = async () => {
     if (!improvePrompt.trim()) return;
     setModal(null);
     
@@ -413,11 +493,12 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
         }
         return img;
     }));
-
+    
+    setImprovementSuggestions([]);
     setImprovePrompt('');
-  };
+    };
 
-  const handleDownload = () => {
+    const handleDownload = () => {
     if (!mainImage) return;
     const link = document.createElement('a');
     link.href = mainImage;
@@ -425,58 +506,137 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+    };
 
-  const handleNewProduct = () => {
-    setModal({ type: 'newProduct' });
-  };
+    const clearSession = () => {
+      setUploadedImages([]);
+      setMainImage(null);
+      setGeneratedImages([]);
+      setActiveThumbnailIndex(-1);
+      setActiveSourceImageIndex(0);
+      setProductDescription('');
+      setError(null);
+    };
 
-  const openConfirmationModal = (style: typeof PHOTO_STYLES[0]) => {
-    setModal({ type: 'confirm', data: style });
-  };
-
-  const openImproveModal = () => {
-    setModal({ type: 'improve' });
-  };
-  
-  const handleThumbnailClick = (image: GeneratedImage, index: number) => {
-      if (image.status === 'completed' && image.src) {
-          setMainImage(image.src);
-          setActiveThumbnailIndex(index);
+    const handleNewProduct = () => {
+      if (uploadedImages.length > 0) {
+        setModal({ type: 'confirmNew' });
+      } else {
+        setModal({ type: 'upload' });
       }
-  };
+    };
+    
+    const startNewProject = () => {
+      clearSession();
+      setModal({ type: 'upload' });
+    };
 
-  const isActionDisabled = !mainImage || !generatedImages.length || generatedImages[activeThumbnailIndex]?.status !== 'completed';
+    const openConfirmationModal = (style: typeof PHOTO_STYLES[0]) => {
+      setModal({ type: 'confirm', data: style });
+    };
 
-  const renderModal = () => {
+    const openImproveModal = async () => {
+      if (!productDescription) {
+        // Find the active source image and re-analyze if description is missing
+        const activeSourceImage = uploadedImages[activeSourceImageIndex];
+        if(activeSourceImage) {
+            await analyzeImage(activeSourceImage);
+        } else {
+            setError("Please upload an image and wait for analysis to complete.");
+            return;
+        }
+      }
+
+      setModal({ type: 'improve' });
+      setIsFetchingSuggestions(true);
+      setImprovementSuggestions([]);
+      try {
+        const suggestions = await getImprovementSuggestions(productDescription);
+        setImprovementSuggestions(suggestions);
+      } catch (e) {
+          console.error("Failed to get improvement suggestions:", e);
+          // Silently fail, user can still type manually
+      } finally {
+        setIsFetchingSuggestions(false);
+      }
+    };
+
+    const handleSourceImageClick = (index: number) => {
+      setActiveSourceImageIndex(index);
+      setMainImage(uploadedImages[index]);
+      setActiveThumbnailIndex(-1);
+      analyzeImage(uploadedImages[index]); // Re-analyze new active image
+    };
+  
+    const handleThumbnailClick = (image: GeneratedImage, index: number) => {
+        if (image.status === 'completed' && image.src) {
+            setMainImage(image.src);
+            setActiveThumbnailIndex(index);
+        }
+    };
+
+    const isActionDisabled = !mainImage || !generatedImages.length || generatedImages[activeThumbnailIndex]?.status !== 'completed';
+
+    const renderUploadUI = () => (
+      <>
+        <label 
+          htmlFor="modal-file-upload" 
+          className={`upload-box ${isDragging ? 'dragging' : ''}`}
+          aria-label="Upload product image"
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+          <div>Click to <span>upload files</span> or drag and drop</div>
+          <p className="upload-hint">Up to 6 images</p>
+        </label>
+        <input id="modal-file-upload" type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ display: 'none' }} />
+        <div className="or-divider">or</div>
+        <div className="url-upload-container">
+            <input 
+              type="text" 
+              className="url-input" 
+              placeholder="Paste image URL..." 
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleUrlUpload()}
+            />
+            <button className="btn btn-secondary" onClick={handleUrlUpload}>Load</button>
+        </div>
+      </>
+    );
+
+    const renderModal = () => {
     if (!modal) return null;
 
     switch (modal.type) {
-      case 'newProduct':
+      case 'upload':
         return (
           <Modal
-            title="Start New Project"
+            title="Upload Product Image(s)"
             actions={<button className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button>}
           >
-            <p>This will start a new session with a new product image. Your current results will be kept.</p>
             <div className="upload-options modal-upload">
-              <label 
-                htmlFor="modal-file-upload" 
-                className={`upload-box ${isDragging ? 'dragging' : ''}`}
-                aria-label="Upload product image"
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
-                <div>Click to <span>upload a file</span> or drag and drop</div>
-              </label>
-              <input id="modal-file-upload" type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+              {renderUploadUI()}
             </div>
           </Modal>
         );
-
+      case 'confirmNew':
+        return (
+          <Modal
+            title="Start New Project"
+            actions={(
+              <>
+                <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button>
+                <button className="btn btn-primary" onClick={startNewProject}>Start New</button>
+              </>
+            )}
+          >
+            <p>This will clear your current uploaded images and results. Are you sure you want to continue?</p>
+          </Modal>
+        );
       case 'confirm':
         const style = modal.data;
         return (
@@ -494,6 +654,7 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
         );
       
       case 'improve':
+        const improveHelpText = "Describe the changes you'd like to see, or try one of our suggestions.";
         return (
           <Modal
             title="Improve Image"
@@ -505,14 +666,33 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
             )}
           >
             <>
-              <p>Describe the changes you'd like to see. For example, "Change the beach background to NYC".</p>
-              <textarea 
-                  ref={placeholderRef}
-                  value={improvePrompt} 
-                  onChange={(e) => setImprovePrompt(e.target.value)}
-                  placeholder={currentPlaceholder}
-                  aria-label="Improvement prompt"
-              />
+              {isFetchingSuggestions ? (
+                <div className="modal-loading-container">
+                  <ThumbnailSpinner />
+                  <p>Generating creative ideas...</p>
+                </div>
+              ) : (
+                <>
+                  {improvementSuggestions.length > 0 && (
+                    <div className="suggestions-container">
+                      <p className="suggestion-prompt">Need inspiration? Try one of these:</p>
+                      {improvementSuggestions.map((suggestion, index) => (
+                        <button key={index} className="suggestion-btn" onClick={() => setImprovePrompt(suggestion)}>
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p>{improveHelpText}</p>
+                  <textarea 
+                      ref={placeholderRef}
+                      value={improvePrompt} 
+                      onChange={(e) => setImprovePrompt(e.target.value)}
+                      placeholder={currentPlaceholder}
+                      aria-label="Improvement prompt"
+                  />
+                </>
+              )}
             </>
           </Modal>
         );
@@ -553,18 +733,18 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
       <main className="editor-screen">
         <aside className="styles-sidebar">
           <h2>Choose a Style</h2>
-          {isAnalyzing && <p className="analysis-status">Analyzing product to create better prompts...</p>}
-          {error && <p className="analysis-status" style={{ backgroundColor: 'var(--error-color)'}}>{error}</p>}
+          {isAnalyzing && <div className="analysis-status">Analyzing product to create better prompts...</div>}
+          {error && <div className="analysis-status error">{error}</div>}
           <div className="styles-grid">
             {PHOTO_STYLES.map(style => (
               <div 
                 key={style.id} 
-                className={`style-card ${!uploadedImage ? 'disabled' : ''}`}
-                onClick={() => uploadedImage && openConfirmationModal(style)} 
+                className={`style-card ${!uploadedImages.length || isAnalyzing ? 'disabled' : ''}`}
+                onClick={() => uploadedImages.length && !isAnalyzing && openConfirmationModal(style)} 
                 role="button" 
-                tabIndex={!uploadedImage ? -1 : 0} 
+                tabIndex={!uploadedImages.length || isAnalyzing ? -1 : 0} 
                 aria-label={`Select ${style.name} style`}
-                aria-disabled={!uploadedImage}
+                aria-disabled={!uploadedImages.length || isAnalyzing}
               >
                 <img src={style.preview} alt={`${style.name} preview`} />
                 <div className="style-card-content">
@@ -578,30 +758,33 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
 
         <section className="canvas-container">
           <div className="canvas">
-            {!uploadedImage ? (
+            {!uploadedImages.length ? (
                 <div className="canvas-upload-view">
                     <h1>AI Product Photography Studio</h1>
                     <p>Transform your product photos into stunning, professional-grade marketing assets in seconds. Upload an image to get started.</p>
                     <div className="upload-options">
-                        <label 
-                          htmlFor="file-upload" 
-                          className={`upload-box ${isDragging ? 'dragging' : ''}`}
-                          aria-label="Upload product image"
-                          onDragEnter={handleDragEnter}
-                          onDragLeave={handleDragLeave}
-                          onDragOver={handleDragOver}
-                          onDrop={handleDrop}
-                        >
-                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
-                          <div>Click to <span>upload a file</span> or drag and drop</div>
-                        </label>
-                        <input id="file-upload" type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+                      {renderUploadUI()}
                     </div>
                 </div>
             ) : (
                 mainImage && <img src={mainImage} alt="Main product view" />
             )}
           </div>
+          {uploadedImages.length > 0 && (
+            <div className="source-thumbnails-container">
+              <div className="source-thumbnails-wrapper">
+                {uploadedImages.map((src, index) => (
+                  <div
+                    key={index}
+                    className={`source-thumbnail ${index === activeSourceImageIndex ? 'active' : ''}`}
+                    onClick={() => handleSourceImageClick(index)}
+                  >
+                    <img src={src} alt={`Source product ${index + 1}`} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         <aside className="results-sidebar">
@@ -624,6 +807,8 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
                             {image.style}
                         </div>
                     </>
+                ) : image.status === 'error' ? (
+                  <div className="thumbnail-error">Failed</div>
                 ) : (
                     <ThumbnailSpinner />
                 )}
