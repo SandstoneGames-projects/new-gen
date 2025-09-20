@@ -16,6 +16,13 @@ const isMobileDevice = () => {
 
 const PHOTO_STYLES = [
   {
+    id: 'whitebg',
+    name: 'White Background',
+    description: 'The e-commerce gold standard. Clean, minimal, and distraction-free.',
+    prompt: "Isolate the product from its current background and place it on a completely pure, seamless white background (#FFFFFF). The lighting on the product should be clean, bright, and diffused to eliminate all but the softest contact shadows, ensuring the product's colors and details are accurately represented. The final image should be suitable for a high-end e-commerce product listing.",
+    preview: 'https://i.imgur.com/3Hn6MM1.jpeg',
+  },
+  {
     id: 'hero',
     name: 'Hero Shot',
     description: 'A visually striking shot that showcases your product in its best light.',
@@ -37,6 +44,13 @@ const PHOTO_STYLES = [
     preview: 'https://i.imgur.com/wE21foO.jpeg',
   },
   {
+    id: 'model',
+    name: 'Model Photography',
+    description: 'Features your product with a human model to demonstrate scale and use.',
+    prompt: 'Create a professional photograph featuring a human model naturally interacting with the product. The model should enhance the product, not distract from it. The focus must remain on the product, highlighting its use, scale, or aspirational qualities. The lighting and setting should be appropriate for the product and the target audience. The model\'s face can be partially visible or out of focus if it helps keep the product as the hero of the image.',
+    preview: 'https://i.imgur.com/5Aifb8g.jpeg',
+  },
+  {
     id: 'studio',
     name: 'Studio Photography',
     description: 'Clean and polished look with consistent lighting and background.',
@@ -56,13 +70,6 @@ const PHOTO_STYLES = [
     description: 'Clear, accurate shots that follow platform-specific guidelines.',
     prompt: 'Generate a clear and accurate e-commerce product shot optimized for marketplaces like Amazon or Shopify. The product must be the sole focus, sharply in focus from edge to edge, and well-lit to show its true colors and details. Styling should be minimal to none. The background should be simple and non-distracting, often a light neutral gray or a subtle gradient.',
     preview: 'https://i.imgur.com/AbwB5uB.jpeg',
-  },
-  {
-    id: 'whitebg',
-    name: 'White Background Shots',
-    description: 'The e-commerce gold standard. Clean, minimal, and distraction-free.',
-    prompt: "Isolate the product from its current background and place it on a completely pure, seamless white background (#FFFFFF). The lighting on the product should be clean, bright, and diffused to eliminate all but the softest contact shadows, ensuring the product's colors and details are accurately represented. The final image should be suitable for a high-end e-commerce product listing.",
-    preview: 'https://i.imgur.com/3Hn6MM1.jpeg',
   },
 ];
 
@@ -553,12 +560,12 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
             {PHOTO_STYLES.map(style => (
               <div 
                 key={style.id} 
-                className={`style-card ${!uploadedImage ? 'disabled' : ''}`}
-                onClick={() => uploadedImage && openConfirmationModal(style)} 
+                className={`style-card ${!uploadedImage || isAnalyzing ? 'disabled' : ''}`}
+                onClick={() => uploadedImage && !isAnalyzing && openConfirmationModal(style)} 
                 role="button" 
-                tabIndex={!uploadedImage ? -1 : 0} 
+                tabIndex={!uploadedImage || isAnalyzing ? -1 : 0} 
                 aria-label={`Select ${style.name} style`}
-                aria-disabled={!uploadedImage}
+                aria-disabled={!uploadedImage || isAnalyzing}
               >
                 <img src={style.preview} alt={`${style.name} preview`} />
                 <div className="style-card-content">

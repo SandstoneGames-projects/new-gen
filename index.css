@@ -431,6 +431,7 @@ body {
 .style-tag[data-style-id="hero"] { background-color: var(--style-hero-color); }
 .style-tag[data-style-id="closeup"] { background-color: var(--style-closeup-color); }
 .style-tag[data-style-id="lifestyle"] { background-color: var(--style-lifestyle-color); }
+.style-tag[data-style-id="model"] { background-color: #FF7F50; }
 .style-tag[data-style-id="studio"] { background-color: var(--style-studio-color); }
 .style-tag[data-style-id="flatlay"] { background-color: var(--style-flatlay-color); }
 .style-tag[data-style-id="ecommerce"] { background-color: var(--style-ecommerce-color); }

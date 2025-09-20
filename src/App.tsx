@@ -39,6 +39,13 @@ const PHOTO_STYLES = [
     preview: 'https://i.imgur.com/wE21foO.jpeg',
   },
   {
+    id: 'model',
+    name: 'Model Photography',
+    description: 'Features your product with a human model to demonstrate scale and use.',
+    prompt: 'Create a professional photograph featuring a human model naturally interacting with the product. The model should enhance the product, not distract from it. The focus must remain on the product, highlighting its use, scale, or aspirational qualities. The lighting and setting should be appropriate for the product and the target audience. The model\'s face can be partially visible or out of focus if it helps keep the product as the hero of the image.',
+    preview: 'https://i.imgur.com/k413eMY.jpeg',
+  },
+  {
     id: 'studio',
     name: 'Studio Photography',
     description: 'Clean and polished look with consistent lighting and background.',
@@ -100,6 +107,7 @@ const App = () => {
   const [activeThumbnailIndex, setActiveThumbnailIndex] = useState(-1);
   const [productDescription, setProductDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [isUrlLoading, setIsUrlLoading] = useState(false);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -223,16 +231,19 @@ const App = () => {
       });
     };
     
-    const handleUrlUpload = useCallback(async () => {
-      if (!imageUrl.trim()) {
-        setError("Please enter a valid URL.");
-        return;
-      }
+    const handleUrlUpload = () => {
+      if (!imageUrl.trim() || isUrlLoading) return;
+      
       setError(null);
+      setIsUrlLoading(true);
   
       const img = new Image();
       img.crossOrigin = "Anonymous";
   
+      const cleanup = () => {
+        setIsUrlLoading(false);
+      };
+      
       img.onload = () => {
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
@@ -240,6 +251,7 @@ const App = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           setError("Failed to process image from URL.");
+          cleanup();
           return;
         }
         ctx.drawImage(img, 0, 0);
@@ -250,15 +262,19 @@ const App = () => {
         } catch (e) {
           console.error("Canvas toDataURL error:", e);
           setError("Could not process image from this URL. It might be due to security restrictions (CORS). Try downloading it and uploading the file directly.");
+        } finally {
+          cleanup();
         }
       };
   
       img.onerror = () => {
         setError("Failed to load image from the provided URL. Please check the URL and try again.");
+        cleanup();
       };
       
-      img.src = imageUrl;
-    }, [imageUrl]);
+      // Use a CORS proxy for fetching the image to avoid tainted canvas issues
+      img.src = `https://cors-anywhere.herokuapp.com/${imageUrl}`;
+    };
 
     const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
       processFiles(event.target.files);
@@ -375,11 +391,11 @@ Return the 4 prompts as a JSON array of strings. For example: ["prompt 1", "prom
     };
   
     const getImprovementSuggestions = async (imageDescription: string): Promise<string[]> => {
-      const prompt = `You are an expert creative director. Based on the following image description, generate exactly 5 creative and actionable suggestions to improve the product photograph. The suggestions should cover different aspects like background, lighting, composition, props, and mood.
+      const prompt = `You are an expert creative director. Based on the following image description, generate exactly 4 creative and actionable suggestions to improve the product photograph. The suggestions should cover different aspects like background, lighting, composition, props, and mood.
     
 Image Description: "${imageDescription}"
     
-Return the 5 suggestions as a JSON object with a key "suggestions" containing an array of strings. For example: {"suggestions": ["Change the background to a marble countertop.", "Add steam rising from it to suggest it's hot.", "Use more dramatic, high-contrast lighting.", "Place a complementary object next to it.", "Shoot from a top-down angle."]}.`;
+Return the 4 suggestions as a JSON object with a key "suggestions" containing an array of strings. For example: {"suggestions": ["Change the background to a marble countertop.", "Add steam rising from it to suggest it's hot.", "Use more dramatic, high-contrast lighting.", "Place a complementary object next to it."]}.`;
     
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -392,7 +408,7 @@ Return the 5 suggestions as a JSON object with a key "suggestions" containing an
               suggestions: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING },
-                description: 'An array of exactly 5 creative suggestions.'
+                description: 'An array of exactly 4 creative suggestions.'
               }
             },
             required: ['suggestions']
@@ -537,7 +553,6 @@ Return the 5 suggestions as a JSON object with a key "suggestions" containing an
 
     const openImproveModal = async () => {
       if (!productDescription) {
-        // Find the active source image and re-analyze if description is missing
         const activeSourceImage = uploadedImages[activeSourceImageIndex];
         if(activeSourceImage) {
             await analyzeImage(activeSourceImage);
@@ -555,7 +570,6 @@ Return the 5 suggestions as a JSON object with a key "suggestions" containing an
         setImprovementSuggestions(suggestions);
       } catch (e) {
           console.error("Failed to get improvement suggestions:", e);
-          // Silently fail, user can still type manually
       } finally {
         setIsFetchingSuggestions(false);
       }
@@ -565,7 +579,7 @@ Return the 5 suggestions as a JSON object with a key "suggestions" containing an
       setActiveSourceImageIndex(index);
       setMainImage(uploadedImages[index]);
       setActiveThumbnailIndex(-1);
-      analyzeImage(uploadedImages[index]); // Re-analyze new active image
+      analyzeImage(uploadedImages[index]); 
     };
   
     const handleThumbnailClick = (image: GeneratedImage, index: number) => {
@@ -602,8 +616,11 @@ Return the 5 suggestions as a JSON object with a key "suggestions" containing an
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleUrlUpload()}
+              disabled={isUrlLoading}
             />
-            <button className="btn btn-secondary" onClick={handleUrlUpload}>Load</button>
+            <button className="btn btn-secondary" onClick={handleUrlUpload} disabled={isUrlLoading || !imageUrl.trim()}>
+              {isUrlLoading ? 'Loading...' : 'Load'}
+            </button>
         </div>
       </>
     );
@@ -673,6 +690,14 @@ Return the 5 suggestions as a JSON object with a key "suggestions" containing an
                 </div>
               ) : (
                 <>
+                  <p>{improveHelpText}</p>
+                  <textarea 
+                      ref={placeholderRef}
+                      value={improvePrompt} 
+                      onChange={(e) => setImprovePrompt(e.target.value)}
+                      placeholder={currentPlaceholder}
+                      aria-label="Improvement prompt"
+                  />
                   {improvementSuggestions.length > 0 && (
                     <div className="suggestions-container">
                       <p className="suggestion-prompt">Need inspiration? Try one of these:</p>
@@ -683,14 +708,6 @@ Return the 5 suggestions as a JSON object with a key "suggestions" containing an
                       ))}
                     </div>
                   )}
-                  <p>{improveHelpText}</p>
-                  <textarea 
-                      ref={placeholderRef}
-                      value={improvePrompt} 
-                      onChange={(e) => setImprovePrompt(e.target.value)}
-                      placeholder={currentPlaceholder}
-                      aria-label="Improvement prompt"
-                  />
                 </>
               )}
             </>
@@ -760,8 +777,8 @@ Return the 5 suggestions as a JSON object with a key "suggestions" containing an
           <div className="canvas">
             {!uploadedImages.length ? (
                 <div className="canvas-upload-view">
-                    <h1>AI Product Photography Studio</h1>
-                    <p>Transform your product photos into stunning, professional-grade marketing assets in seconds. Upload an image to get started.</p>
+                    <h1>Your AI-Powered Photo Studio Awaits</h1>
+                    <p>Ready to create stunning visuals? Upload an image by file, drag-and-drop, or URL to begin.</p>
                     <div className="upload-options">
                       {renderUploadUI()}
                     </div>

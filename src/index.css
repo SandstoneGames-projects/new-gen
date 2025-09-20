@@ -14,6 +14,7 @@
   --style-hero-color: #6a5acd;
   --style-closeup-color: #4682b4;
   --style-lifestyle-color: #3cb371;
+  --style-model-color: #FF7F50;
   --style-studio-color: #888888;
   --style-flatlay-color: #DAA520;
   --style-ecommerce-color: #4169E1;
@@ -494,6 +495,7 @@ body {
 .style-tag[data-style-id="hero"] { background-color: var(--style-hero-color); }
 .style-tag[data-style-id="closeup"] { background-color: var(--style-closeup-color); }
 .style-tag[data-style-id="lifestyle"] { background-color: var(--style-lifestyle-color); }
+.style-tag[data-style-id="model"] { background-color: var(--style-model-color); }
 .style-tag[data-style-id="studio"] { background-color: var(--style-studio-color); }
 .style-tag[data-style-id="flatlay"] { background-color: var(--style-flatlay-color); }
 .style-tag[data-style-id="ecommerce"] { background-color: var(--style-ecommerce-color); }
@@ -589,7 +591,7 @@ body {
     font-family: var(--font-family);
     font-size: 1rem;
     resize: vertical;
-    margin-top: 1rem;
+    margin-bottom: 1rem;
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
@@ -640,14 +642,18 @@ body {
 }
 
 .suggestions-container {
-  margin-bottom: 1rem;
+  margin-top: -0.5rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .suggestion-prompt {
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 0.75rem !important;
+  margin-bottom: 0.25rem !important;
 }
 
 .suggestion-btn {
@@ -655,11 +661,12 @@ body {
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   border-radius: 6px;
-  padding: 0.5rem 0.75rem;
-  margin: 0.25rem;
+  padding: 0.6rem 0.75rem;
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s ease;
+  width: 100%;
+  text-align: left;
 }
 
 .suggestion-btn:hover {
